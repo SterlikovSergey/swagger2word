@@ -1,0 +1,35 @@
+server:
+  port: 8081
+  # Добавить для обработки больших запросов
+  max-http-request-size: 10MB
+  max-http-request-header-size: 65536
+
+app:
+  api-docs-url: http://10.16.32.227:8080/usnbook-employees/api-docs
+  output-directory: ./generated-docs
+  # Добавить таймауты
+  connection-timeout: 10000
+  read-timeout: 30000
+
+spring:
+  web:
+    resources:
+      add-mappings: false
+  webflux:
+    max-in-memory-size: 10MB
+    # Добавить настройки буфера
+    codec:
+      max-in-memory-size: 10MB
+  # Добавить настройки Jackson для больших JSON
+  jackson:
+    default-property-inclusion: non_null
+    deserialization:
+      fail-on-unknown-properties: false
+
+logging:
+  level:
+    com.usnbook.swagger2word: DEBUG  # Для отладки
+    org.springframework.web: INFO
+    reactor.netty: WARN
+    # Добавить логирование WebClient
+    org.springframework.web.reactive.function.client: DEBUG
