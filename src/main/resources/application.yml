@@ -5,7 +5,6 @@ server:
   max-http-request-header-size: 65536
 
 app:
-  api-docs-url: http://10.16.32.227:8080/usnbook-employees/api-docs
   output-directory: ./generated-docs
   # Добавить таймауты
   connection-timeout: 10000
