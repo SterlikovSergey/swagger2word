@@ -8,12 +8,15 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Mono;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.file.Files;
 
 @RestController
@@ -32,11 +35,27 @@ public class DocumentationController {
     }
 
     @GetMapping
-    public Mono<ResponseEntity<byte[]>> generateDocumentation() {
-        return apiDocsService.fetchApiDocs()
+    public Mono<ResponseEntity<byte[]>> generateDocumentation(@RequestParam(required = false) String url) {
+        if (url == null || url.trim().isEmpty()) {
+            logger.warn("URL parameter is missing");
+            return Mono.just(ResponseEntity.badRequest()
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body("Error: URL parameter is required".getBytes()));
+        }
+
+        try {
+            new URL(url); // Валидация URL
+        } catch (MalformedURLException e) {
+            logger.warn("Invalid URL format: {}", url);
+            return Mono.just(ResponseEntity.badRequest()
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .body(("Error: Invalid URL format: " + url).getBytes()));
+        }
+
+        return apiDocsService.fetchApiDocs(url)
                 .map(apiSpec -> {
                     try {
-                        logger.info("Generating Word document for API: {}", apiSpec.getInfo().getTitle());
+                        logger.info("Generating Word document for API: {} from URL: {}", apiSpec.getInfo().getTitle(), url);
 
                         String filePath = wordDocumentService.generateWordDocument(apiSpec);
                         File file = new File(filePath);
@@ -57,13 +76,14 @@ public class DocumentationController {
                                 .body(content);
 
                     } catch (Exception e) {
-                        logger.error("Failed to generate document", e);
+                        logger.error("Failed to generate document from URL: {}", url, e);
                         throw new RuntimeException("Failed to generate document: " + e.getMessage(), e);
                     }
                 })
                 .onErrorResume(e -> {
-                    logger.error("Error in documentation generation", e);
+                    logger.error("Error in documentation generation from URL: {}", url, e);
                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .contentType(MediaType.TEXT_PLAIN)
                             .body(("Error: " + e.getMessage()).getBytes()));
                 });
     }

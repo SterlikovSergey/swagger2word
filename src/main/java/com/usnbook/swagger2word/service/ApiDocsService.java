@@ -1,8 +1,6 @@
 package com.usnbook.swagger2word.service;
 
 import com.usnbook.swagger2word.model.OpenApiSpec;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -17,28 +15,24 @@ public class ApiDocsService {
 
     private static final Logger logger = LoggerFactory.getLogger(ApiDocsService.class);
 
-    private final WebClient webClient;
-    private final String apiDocsUrl;
+    private final WebClient.Builder webClientBuilder;
 
-    public ApiDocsService(WebClient.Builder webClientBuilder,
-                          @Value("${app.api-docs-url}") String apiDocsUrl) {
-        this.webClient = webClientBuilder
-                .baseUrl(apiDocsUrl)
-                .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                .build();
-        this.apiDocsUrl = apiDocsUrl;
+    public ApiDocsService(WebClient.Builder webClientBuilder) {
+        this.webClientBuilder = webClientBuilder;
     }
 
-    public Mono<OpenApiSpec> fetchApiDocs() {
-        logger.info("Fetching API docs from: {}", apiDocsUrl);
+    public Mono<OpenApiSpec> fetchApiDocs(String apiUrl) {
+        logger.info("Fetching API docs from: {}", apiUrl);
 
-        return webClient.get()
-                .uri(apiDocsUrl)
+        return webClientBuilder.build()
+                .get()
+                .uri(apiUrl)
+                .accept(MediaType.APPLICATION_JSON)
                 .retrieve()
                 .bodyToMono(OpenApiSpec.class)
                 .doOnSuccess(this::logApiDocsInfo)
-                .doOnError(e -> logger.error("Failed to fetch API docs from: {}", apiDocsUrl, e))
-                .onErrorMap(e -> new RuntimeException("Failed to fetch API docs from: " + apiDocsUrl, e));
+                .doOnError(e -> logger.error("Failed to fetch API docs from: {}", apiUrl, e))
+                .onErrorMap(e -> new RuntimeException("Failed to fetch API docs from: " + apiUrl, e));
     }
 
     private void logApiDocsInfo(OpenApiSpec spec) {
