@@ -1,5 +1,6 @@
 package com.usnbook.swagger2word.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.usnbook.swagger2word.service.ApiDocsService;
 import com.usnbook.swagger2word.service.WordDocumentService;
 import org.springframework.http.HttpHeaders;
@@ -14,10 +15,10 @@ import reactor.core.publisher.Mono;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.nio.file.Files;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @RestController
 @RequestMapping("/api/generate-doc")
@@ -35,7 +36,7 @@ public class DocumentationController {
     }
 
     @GetMapping
-    public Mono<ResponseEntity<byte[]>> generateDocumentation(@RequestParam(required = false) String url) {
+    public Mono<ResponseEntity<byte[]>> generateDocumentation(@RequestParam String url) {
         if (url == null || url.trim().isEmpty()) {
             logger.warn("URL parameter is missing");
             return Mono.just(ResponseEntity.badRequest()
@@ -53,38 +54,50 @@ public class DocumentationController {
         }
 
         return apiDocsService.fetchApiDocs(url)
-                .map(apiSpec -> {
+                .flatMap(apiSpec -> {
                     try {
-                        logger.info("Generating Word document for API: {} from URL: {}", apiSpec.getInfo().getTitle(), url);
+                        logger.info("Generating Word document for API from URL: {}", url);
 
-                        String filePath = wordDocumentService.generateWordDocument(apiSpec);
-                        File file = new File(filePath);
+                        // Передаем JsonNode напрямую в сервис
+                        byte[] content = wordDocumentService.generateWordDocumentFromJson(apiSpec);
 
-                        if (!file.exists()) {
-                            throw new RuntimeException("Generated file not found: " + filePath);
-                        }
+                        String fileName = generateFileName(
+                                apiSpec.path("info").path("title").asText("API_Documentation")
+                        );
 
-                        byte[] content = Files.readAllBytes(file.toPath());
+                        logger.info("Document generated successfully: {}", fileName);
 
-                        logger.info("Document generated successfully: {}", file.getName());
-
-                        return ResponseEntity.ok()
+                        return Mono.just(ResponseEntity.ok()
                                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                                        "attachment; filename=\"" + file.getName() + "\"")
+                                        "attachment; filename=\"" + fileName + "\"")
                                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                                 .contentLength(content.length)
-                                .body(content);
+                                .body(content));
 
                     } catch (Exception e) {
                         logger.error("Failed to generate document from URL: {}", url, e);
-                        throw new RuntimeException("Failed to generate document: " + e.getMessage(), e);
+                        return Mono.error(new RuntimeException("Failed to generate document: " + e.getMessage(), e));
                     }
                 })
                 .onErrorResume(e -> {
                     logger.error("Error in documentation generation from URL: {}", url, e);
+                    String errorMessage = e.getMessage() != null ? e.getMessage() : "Unknown error occurred";
                     return Mono.just(ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                             .contentType(MediaType.TEXT_PLAIN)
-                            .body(("Error: " + e.getMessage()).getBytes()));
+                            .body(("Error: " + errorMessage).getBytes()));
                 });
+    }
+
+    private String generateFileName(String apiTitle) {
+        if (apiTitle == null || apiTitle.trim().isEmpty()) {
+            apiTitle = "API";
+        }
+
+        String safeTitle = apiTitle.replaceAll("[^a-zA-Z0-9а-яА-Я\\s-]", "_")
+                .replaceAll("\\s+", "_")
+                .substring(0, Math.min(50, apiTitle.length()));
+
+        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+        return safeTitle + "_API_Documentation_" + timestamp + ".docx";
     }
 }
