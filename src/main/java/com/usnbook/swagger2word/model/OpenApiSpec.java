@@ -13,7 +13,7 @@ public class OpenApiSpec {
     private Info info;
     private List<Server> servers;
     private List<Tag> tags;
-    private Map<String, Path> paths; // ИСПРАВЛЕНИЕ: Оставляем Map для обратной совместимости
+    private Map<String, Path> paths;
     private Components components;
     private ExternalDocs externalDocs;
 
@@ -58,7 +58,6 @@ public class OpenApiSpec {
         private String url;
     }
 
-    // ИСПРАВЛЕНИЕ: Расширенный класс Path с поддержкой всех HTTP методов
     @Data
     public static class Path {
         @JsonProperty("get")
@@ -85,19 +84,19 @@ public class OpenApiSpec {
         @JsonProperty("trace")
         private Operation traceOperation;
 
-        // Для обратной совместимости - если используется Map
+
         private Map<String, Operation> operations;
 
-        // ИСПРАВЛЕНИЕ: Универсальный метод получения всех операций
+
         public Map<String, Operation> getAllOperations() {
             Map<String, Operation> allOps = new LinkedHashMap<>();
 
-            // Вариант 1: Через operations Map (если используется)
+
             if (this.operations != null && !this.operations.isEmpty()) {
                 allOps.putAll(this.operations);
             }
 
-            // Вариант 2: Через отдельные поля (если Map пустой или отсутствует)
+
             if (allOps.isEmpty()) {
                 if (getOperation != null) allOps.put("get", getOperation);
                 if (putOperation != null) allOps.put("put", putOperation);
@@ -112,7 +111,7 @@ public class OpenApiSpec {
             return allOps.isEmpty() ? null : allOps;
         }
 
-        // Устаревший метод для совместимости
+
         public Map<String, Operation> getOperations() {
             Map<String, Operation> ops = getAllOperations();
             return ops != null ? ops : new HashMap<>();
@@ -213,7 +212,6 @@ public class OpenApiSpec {
     @Data
     public static class Schema {
         private String type;
-        // Геттер для совместимости
         private String ref;
         private String format;
         private String title;
