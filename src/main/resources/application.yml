@@ -1,34 +1,42 @@
 server:
   port: 8081
-  # Добавить для обработки больших запросов
-  max-http-request-size: 100MB
-  max-http-request-header-size: 655360
+  # Настройки для больших запросов
+  max-http-request-size: 50MB
+  max-http-request-header-size: 65536
 
 app:
   output-directory: ./generated-docs
-  # Добавить таймауты
-  connection-timeout: 100000
-  read-timeout: 300000
+  # Таймауты
+  connection-timeout: 30000
+  read-timeout: 60000
 
 spring:
   web:
     resources:
       add-mappings: false
   webflux:
-    max-in-memory-size: 100MB
-    # Добавить настройки буфера
+    max-in-memory-size: 50MB
+    # Настройки codec для больших JSON
     codec:
-      max-in-memory-size: 100MB
-  # Добавить настройки Jackson для больших JSON
+      max-in-memory-size: 50MB
+  # НАСТРОЙКИ JACKSON - ИСПРАВЛЕННАЯ ВЕРСИЯ
   jackson:
-    default-property-inclusion: non_null
+    default-property-inclusion: NON_NULL
     deserialization:
       fail-on-unknown-properties: false
+    # Убраны невалидные свойства
+  # Глобальные настройки кодеков для больших JSON
+  codec:
+    max-in-memory-size: 50MB
 
+# Логирование
 logging:
   level:
-    com.usnbook.swagger2word: DEBUG  # Для отладки
+    com.usnbook.swagger2word: INFO
     org.springframework.web: INFO
     reactor.netty: WARN
-    # Добавить логирование WebClient
     org.springframework.web.reactive.function.client: DEBUG
+  file:
+    name: ./logs/application.log
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss} - %logger{36} - %msg%n"

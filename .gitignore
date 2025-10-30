@@ -38,3 +38,9 @@ secret-settings.yml
 *.swp
 *.swo
 
+# Application logs
+logs/
+application.log*
+*.log
+*.log.*.gz
+

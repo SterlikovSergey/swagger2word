@@ -308,43 +308,42 @@ public class WordDocumentService {
         }
     }
 
-    private void addEndpointsByTags(XWPFDocument document, OpenApiSpec apiSpec) {
-        XWPFParagraph endpointsTitle = document.createParagraph();
-        endpointsTitle.setStyle("Heading1");
-        endpointsTitle.setSpacingBefore(600);
-        endpointsTitle.setSpacingAfter(200);
+private void addEndpointsByTags(XWPFDocument document, OpenApiSpec apiSpec) {
+    XWPFParagraph endpointsTitle = document.createParagraph();
+    endpointsTitle.setStyle("Heading1");
+    endpointsTitle.setSpacingBefore(600);
+    endpointsTitle.setSpacingAfter(200);
 
-        XWPFRun endpointsTitleRun = endpointsTitle.createRun();
-        endpointsTitleRun.setText("4. ENDPOINTS");
-        endpointsTitleRun.setBold(true);
-        endpointsTitleRun.setFontSize(16);
-        endpointsTitleRun.setFontFamily("Times New Roman");
-        endpointsTitleRun.setColor("000000");
+    XWPFRun endpointsTitleRun = endpointsTitle.createRun();
+    endpointsTitleRun.setText("4. ENDPOINTS");
+    endpointsTitleRun.setBold(true);
+    endpointsTitleRun.setFontSize(16);
+    endpointsTitleRun.setFontFamily("Times New Roman");
+    endpointsTitleRun.setColor("000000");
 
-        Map<String, OpenApiSpec.Path> allPaths = getAllPaths(apiSpec);
+    Map<String, OpenApiSpec.Path> allPaths = getAllPaths(apiSpec);
 
-        if (allPaths == null || allPaths.isEmpty()) {
-            addEmptyEndpointsMessage(document);
-            addSectionSpacing(document);
-            return;
-        }
-
-        // === ДИАГНОСТИКА ===
-        DiagnosticInfo diagnostics = analyzeApiStructure(allPaths);
-        addDiagnosticInfo(document, diagnostics);
-
-        // === ГРУППИРОВКА И ОТОБРАЖЕНИЕ ===
-        Map<String, List<EndpointOperation>> groupedOperations = groupOperationsByTags(allPaths, diagnostics);
-
-        if (!groupedOperations.isEmpty() && hasValidOperations(groupedOperations)) {
-            displayGroupedEndpoints(document, groupedOperations, diagnostics);
-        } else {
-            displayAllEndpointsFallback(document, allPaths, diagnostics);
-        }
-
+    if (allPaths == null || allPaths.isEmpty()) {
+        addEmptyEndpointsMessage(document);
         addSectionSpacing(document);
+        return;
     }
 
+    // === ДИАГНОСТИКА ===
+    DiagnosticInfo diagnostics = analyzeApiStructure(allPaths);
+    addDiagnosticInfo(document, diagnostics);
+
+    // === ГРУППИРОВКА И ОТОБРАЖЕНИЕ ===
+    Map<String, List<EndpointOperation>> groupedOperations = groupOperationsByTags(allPaths, diagnostics);
+
+    if (!groupedOperations.isEmpty() && hasValidOperations(groupedOperations)) {
+        displayGroupedEndpointsInTables(document, groupedOperations, diagnostics);
+    } else {
+        displayAllEndpointsFallbackInTables(document, allPaths, diagnostics);
+    }
+
+    addSectionSpacing(document);
+}
 
     private Map<String, OpenApiSpec.Path> getAllPaths(OpenApiSpec apiSpec) {
         Map<String, OpenApiSpec.Path> allPaths = new LinkedHashMap<>();
@@ -630,10 +629,11 @@ public class WordDocumentService {
 
         addSectionSpacing(document, 200);
     }
+    //////////////////////////////
 
-    private void displayGroupedEndpoints(XWPFDocument document,
-                                         Map<String, List<EndpointOperation>> groupedOperations,
-                                         DiagnosticInfo diagnostics) {
+    private void displayGroupedEndpointsInTables(XWPFDocument document,
+                                                 Map<String, List<EndpointOperation>> groupedOperations,
+                                                 DiagnosticInfo diagnostics) {
         List<String> sortedGroups = new ArrayList<>(groupedOperations.keySet());
         Collections.sort(sortedGroups, (a, b) -> {
             if ("Не классифицировано".equals(a)) return 1;
@@ -645,14 +645,14 @@ public class WordDocumentService {
         for (String groupName : sortedGroups) {
             List<EndpointOperation> operations = groupedOperations.get(groupName);
             if (operations != null && !operations.isEmpty()) {
-                addGroupSection(document, groupNum, groupName, operations);
+                addGroupSectionWithTable(document, groupNum, groupName, operations);
                 groupNum++;
             }
         }
     }
 
-    private void displayAllEndpointsFallback(XWPFDocument document, Map<String, OpenApiSpec.Path> allPaths,
-                                             DiagnosticInfo diagnostics) {
+    private void displayAllEndpointsFallbackInTables(XWPFDocument document, Map<String, OpenApiSpec.Path> allPaths,
+                                                     DiagnosticInfo diagnostics) {
         XWPFParagraph fallbackTitle = document.createParagraph();
         fallbackTitle.setStyle("Heading2");
         fallbackTitle.setSpacingBefore(200);
@@ -676,7 +676,8 @@ public class WordDocumentService {
         fallbackNoteRun.setColor("666666");
         fallbackNoteRun.setItalic(true);
 
-        int endpointNum = 1;
+        List<EndpointOperation> allOperations = new ArrayList<>();
+        int operationNum = 1;
         for (PathInfo pathInfo : diagnostics.pathInfos) {
             OpenApiSpec.Path pathItem = allPaths.get(pathInfo.path);
             if (pathItem == null) continue;
@@ -690,11 +691,229 @@ public class WordDocumentService {
                         endpointOp.path = pathInfo.path;
                         endpointOp.method = opEntry.getKey() != null ? opEntry.getKey().toUpperCase() : "UNKNOWN";
                         endpointOp.operation = operation;
-
-                        addEndpointDetails(document, endpointNum, endpointOp);
-                        endpointNum++;
+                        allOperations.add(endpointOp);
                     }
                 }
+            }
+        }
+
+        if (!allOperations.isEmpty()) {
+            createEndpointsTable(document, allOperations, "Все endpoints");
+        }
+    }
+
+    private void addGroupSectionWithTable(XWPFDocument document, int groupNum, String groupName,
+                                          List<EndpointOperation> operations) {
+        XWPFParagraph groupTitle = document.createParagraph();
+        groupTitle.setStyle("Heading2");
+        groupTitle.setSpacingBefore(300);
+        groupTitle.setSpacingAfter(100);
+
+        XWPFRun groupTitleRun = groupTitle.createRun();
+        groupTitleRun.setText(groupNum + ". " + groupName);
+        groupTitleRun.setBold(true);
+        groupTitleRun.setFontSize(14);
+        groupTitleRun.setFontFamily("Times New Roman");
+        groupTitleRun.setColor("000000");
+
+        createEndpointsTable(document, operations, groupName);
+    }
+
+    private void createEndpointsTable(XWPFDocument document, List<EndpointOperation> operations, String groupName) {
+        if (operations == null || operations.isEmpty()) return;
+
+        XWPFTable table = document.createTable(1, 6);
+        setupEndpointsTableProperties(table);
+
+        // Заголовок таблицы
+        XWPFTableRow headerRow = table.getRow(0);
+        headerRow.getCell(0).setText("№");
+        headerRow.getCell(1).setText("Метод");
+        headerRow.getCell(2).setText("Путь");
+        headerRow.getCell(3).setText("ID операции");
+        headerRow.getCell(4).setText("Описание");
+        headerRow.getCell(5).setText("Параметры");
+        styleEndpointsTableHeader(headerRow);
+
+        int rowNum = 1;
+        for (EndpointOperation endpointOp : operations) {
+            if (endpointOp.operation == null) continue;
+
+            XWPFTableRow row = table.createRow();
+
+            // №
+            row.getCell(0).setText(String.valueOf(rowNum));
+
+            // Метод
+            String method = endpointOp.method != null ? endpointOp.method : "UNKNOWN";
+            row.getCell(1).setText(method);
+
+            // Путь
+            row.getCell(2).setText(endpointOp.path != null ? endpointOp.path : "UNKNOWN");
+
+            // ID операции
+            String operationId = endpointOp.operation.getOperationId();
+            row.getCell(3).setText(operationId != null ? operationId : "-");
+
+            // Описание
+            String description = endpointOp.operation.getSummary() != null ?
+                    endpointOp.operation.getSummary() :
+                    (endpointOp.operation.getDescription() != null ?
+                            endpointOp.operation.getDescription() : "- отсуствует ");
+            row.getCell(4).setText(description);
+
+            // Параметры
+            String parametersInfo = buildParametersInfo(endpointOp.operation);
+            row.getCell(5).setText(parametersInfo);
+
+            // Стилизация ячеек
+            for (int i = 0; i < 6; i++) {
+                styleEndpointsTableCell(row.getCell(i), false);
+            }
+
+            rowNum++;
+        }
+
+        // Добавляем разделитель после таблицы
+        addTableSeparator(document);
+    }
+
+    private String buildParametersInfo(OpenApiSpec.Operation operation) {
+        StringBuilder paramsBuilder = new StringBuilder();
+
+        // Параметры запроса
+        if (operation.getParameters() != null && !operation.getParameters().isEmpty()) {
+            for (OpenApiSpec.Parameter param : operation.getParameters()) {
+                if (param == null || param.getName() == null) continue;
+
+                if (paramsBuilder.length() > 0) paramsBuilder.append("\n");
+                paramsBuilder.append("• ")
+                        .append(param.getName())
+                        .append(" (")
+                        .append(getLocationText(param.getIn()))
+                        .append(")");
+
+                if (Boolean.TRUE.equals(param.getRequired())) {
+                    paramsBuilder.append(" *");
+                }
+
+                if (param.getSchema() != null) {
+                    paramsBuilder.append(" - ").append(getSchemaType(param.getSchema()));
+                }
+
+                if (param.getDescription() != null && !param.getDescription().trim().isEmpty()) {
+                    paramsBuilder.append("\n  ").append(param.getDescription());
+                }
+            }
+        }
+
+        // Тело запроса
+        if (operation.getRequestBody() != null) {
+            if (paramsBuilder.length() > 0) paramsBuilder.append("\n");
+            paramsBuilder.append("• Тело запроса:");
+
+            OpenApiSpec.RequestBody requestBody = operation.getRequestBody();
+            if (Boolean.TRUE.equals(requestBody.getRequired())) {
+                paramsBuilder.append(" Обязательное");
+            }
+
+            if (requestBody.getContent() != null && !requestBody.getContent().isEmpty()) {
+                paramsBuilder.append("\n  Типы: ")
+                        .append(requestBody.getContent().keySet().stream()
+                                .filter(Objects::nonNull)
+                                .map(Object::toString)
+                                .collect(Collectors.joining(", ")));
+
+                for (Map.Entry<String, OpenApiSpec.MediaType> contentEntry : requestBody.getContent().entrySet()) {
+                    if (contentEntry.getValue() != null && contentEntry.getValue().getSchema() != null) {
+                        paramsBuilder.append("\n  Схема: ")
+                                .append(getSchemaType(contentEntry.getValue().getSchema()));
+                        break;
+                    }
+                }
+            }
+        }
+
+        return paramsBuilder.length() > 0 ? paramsBuilder.toString() : "Нет параметров";
+    }
+
+    private void setupEndpointsTableProperties(XWPFTable table) {
+        CTTblPr tblPr = table.getCTTbl().addNewTblPr();
+        CTTblWidth tblW = tblPr.addNewTblW();
+        tblW.setW(BigInteger.valueOf(10000));
+        tblW.setType(STTblWidth.PCT);
+
+        CTTblGrid tblGrid = table.getCTTbl().addNewTblGrid();
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(500));   // №
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(800));   // Метод
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2500));  // Путь
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2000));  // ID операции
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2000));  // Описание
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2200));  // Параметры
+
+        table.setTableAlignment(TableRowAlign.LEFT);
+    }
+
+    private void styleEndpointsTableHeader(XWPFTableRow row) {
+        for (XWPFTableCell cell : row.getTableCells()) {
+            cell.setColor("E6E6FA");
+            for (XWPFParagraph paragraph : cell.getParagraphs()) {
+                paragraph.setAlignment(ParagraphAlignment.CENTER);
+                for (XWPFRun run : paragraph.getRuns()) {
+                    run.setBold(true);
+                    run.setFontFamily("Times New Roman");
+                    run.setFontSize(9);
+                    run.setColor("000000");
+                }
+            }
+        }
+    }
+
+    private void styleEndpointsTableCell(XWPFTableCell cell, boolean isHeader) {
+        for (XWPFParagraph paragraph : cell.getParagraphs()) {
+            paragraph.setAlignment(ParagraphAlignment.LEFT);
+            paragraph.setSpacingAfter(0);
+            paragraph.setSpacingBefore(0);
+            for (XWPFRun run : paragraph.getRuns()) {
+                run.setFontFamily("Times New Roman");
+                run.setFontSize(8);
+                if (isHeader) {
+                    run.setBold(true);
+                }
+                run.setColor("000000");
+            }
+        }
+    }
+
+    private void addTableSeparator(XWPFDocument document) {
+        XWPFParagraph separator = document.createParagraph();
+        separator.setSpacingBefore(50);
+        separator.setSpacingAfter(100);
+        XWPFRun separatorRun = separator.createRun();
+        separatorRun.setText("─".repeat(80));
+        separatorRun.setFontSize(8);
+        separatorRun.setFontFamily("Courier New");
+        separatorRun.setColor("CCCCCC");
+    }
+
+
+    /// ///////////////////////////
+    private void displayGroupedEndpoints(XWPFDocument document,
+                                         Map<String, List<EndpointOperation>> groupedOperations,
+                                         DiagnosticInfo diagnostics) {
+        List<String> sortedGroups = new ArrayList<>(groupedOperations.keySet());
+        Collections.sort(sortedGroups, (a, b) -> {
+            if ("Не классифицировано".equals(a)) return 1;
+            if ("Не классифицировано".equals(b)) return -1;
+            return a.compareToIgnoreCase(b);
+        });
+
+        int groupNum = 1;
+        for (String groupName : sortedGroups) {
+            List<EndpointOperation> operations = groupedOperations.get(groupName);
+            if (operations != null && !operations.isEmpty()) {
+                addGroupSection(document, groupNum, groupName, operations);
+                groupNum++;
             }
         }
     }
@@ -1002,13 +1221,13 @@ public class WordDocumentService {
 
     private String getLocationText(String location) {
         if (location == null) return "Неизвестно";
-        switch (location) {
-            case "path": return "Путь";
-            case "query": return "Запрос";
-            case "header": return "Заголовок";
-            case "cookie": return "Куки";
-            default: return location;
-        }
+        return switch (location) {
+            case "path" -> "Путь";
+            case "query" -> "Запрос";
+            case "header" -> "Заголовок";
+            case "cookie" -> "Куки";
+            default -> location;
+        };
     }
 
     private String getSchemaType(OpenApiSpec.Schema schema) {
@@ -1067,7 +1286,7 @@ public class WordDocumentService {
         OpenApiSpec.Operation operation;
     }
 
-    // === СХЕМЫ (остаются без изменений) ===
+    // === СХЕМЫ ===
     private void addSchemasSection(XWPFDocument document, OpenApiSpec.Components components) {
         if (components != null && components.getSchemas() != null && !components.getSchemas().isEmpty()) {
             XWPFParagraph schemasTitle = document.createParagraph();
@@ -1192,14 +1411,6 @@ public class WordDocumentService {
         }
     }
 
-    private void setupTableProperties(XWPFTable table) {
-        CTTblPr tblPr = table.getCTTbl().addNewTblPr();
-        CTTblWidth tblW = tblPr.addNewTblW();
-        tblW.setW(BigInteger.valueOf(9000));
-        tblW.setType(STTblWidth.PCT);
-        table.setTableAlignment(TableRowAlign.LEFT);
-    }
-
     private void setupSchemaTableProperties(XWPFTable table) {
         CTTblPr tblPr = table.getCTTbl().addNewTblPr();
         CTTblWidth tblW = tblPr.addNewTblW();
@@ -1213,21 +1424,6 @@ public class WordDocumentService {
         tblGrid.addNewGridCol().setW(BigInteger.valueOf(4000));
 
         table.setTableAlignment(TableRowAlign.LEFT);
-    }
-
-    private void styleTableHeader(XWPFTableRow row) {
-        for (XWPFTableCell cell : row.getTableCells()) {
-            cell.setColor("E6E6FA");
-            for (XWPFParagraph paragraph : cell.getParagraphs()) {
-                paragraph.setAlignment(ParagraphAlignment.LEFT);
-                for (XWPFRun run : paragraph.getRuns()) {
-                    run.setBold(true);
-                    run.setFontFamily("Times New Roman");
-                    run.setFontSize(10);
-                    run.setColor("000000");
-                }
-            }
-        }
     }
 
     private void styleSchemaTableHeader(XWPFTableRow row) {

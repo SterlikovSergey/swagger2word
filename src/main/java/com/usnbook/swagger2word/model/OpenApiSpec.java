@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
-import java.util.*; // ИСПРАВЛЕНИЕ: Добавлен импорт коллекций
+import java.util.*;
 
 @Data
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -16,6 +16,9 @@ public class OpenApiSpec {
     private Map<String, Path> paths;
     private Components components;
     private ExternalDocs externalDocs;
+    private String message;
+    private Integer status;
+    private String error;
 
     @Data
     public static class Info {
@@ -84,18 +87,14 @@ public class OpenApiSpec {
         @JsonProperty("trace")
         private Operation traceOperation;
 
-
         private Map<String, Operation> operations;
-
 
         public Map<String, Operation> getAllOperations() {
             Map<String, Operation> allOps = new LinkedHashMap<>();
 
-
             if (this.operations != null && !this.operations.isEmpty()) {
                 allOps.putAll(this.operations);
             }
-
 
             if (allOps.isEmpty()) {
                 if (getOperation != null) allOps.put("get", getOperation);
@@ -110,7 +109,6 @@ public class OpenApiSpec {
 
             return allOps.isEmpty() ? null : allOps;
         }
-
 
         public Map<String, Operation> getOperations() {
             Map<String, Operation> ops = getAllOperations();
@@ -212,6 +210,7 @@ public class OpenApiSpec {
     @Data
     public static class Schema {
         private String type;
+        @JsonProperty("$ref")
         private String ref;
         private String format;
         private String title;
@@ -240,7 +239,6 @@ public class OpenApiSpec {
         private List<Schema> oneOf;
         private List<Schema> anyOf;
         private Schema not;
-
     }
 
     @Data
@@ -270,5 +268,19 @@ public class OpenApiSpec {
     @Data
     public static class Content {
         private Map<String, MediaType> mediaTypes;
+    }
+
+    public boolean isValid() {
+        return this.info != null && this.info.getTitle() != null;
+    }
+
+    public String getErrorMessage() {
+        if (this.message != null) {
+            return this.message;
+        }
+        if (this.error != null) {
+            return this.error;
+        }
+        return null;
     }
 }
