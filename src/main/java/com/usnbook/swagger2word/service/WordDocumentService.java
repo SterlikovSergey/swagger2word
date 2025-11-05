@@ -1,8 +1,20 @@
 package com.usnbook.swagger2word.service;
 
 import com.usnbook.swagger2word.model.OpenApiSpec;
-import org.apache.poi.xwpf.usermodel.*;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.*;
+/*import org.apache.poi.xwpf.usermodel.*;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.*;*/
+import org.apache.poi.xwpf.usermodel.BreakType;
+import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
+import org.apache.poi.xwpf.usermodel.TableRowAlign;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFParagraph;
+import org.apache.poi.xwpf.usermodel.XWPFRun;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableCell;
+import org.apache.poi.xwpf.usermodel.XWPFTableRow;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTBorder;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSectPr;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STBorder;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -19,6 +31,11 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STPageOrientation;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageSz;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPageMar;
+
+
 @Service
 public class WordDocumentService {
 
@@ -32,10 +49,14 @@ public class WordDocumentService {
             throw new IllegalArgumentException("API спецификация не может быть null");
         }
         if (apiSpec.getInfo() == null) {
-            throw new IllegalArgumentException("Информация об API отсутствует");
+            throw new IllegalArgumentException("Информация об API отсуствует");
         }
 
         try (XWPFDocument document = new XWPFDocument()) {
+
+            // НАСТРОЙКА РАЗМЕРОВ СТРАНИЦЫ А4 И ПОЛЕЙ
+            setupPageSizeAndMargins(document);
+
             addTitlePage(document, apiSpec);
             addGeneralInfo(document, apiSpec);
             addServersSection(document, apiSpec.getServers());
@@ -53,6 +74,29 @@ public class WordDocumentService {
 
             return fileName;
         }
+    }
+
+    private void setupPageSizeAndMargins(XWPFDocument document) {
+        // Получаем или создаем секцию документа
+        CTSectPr sectPr = document.getDocument().getBody().getSectPr();
+        if (sectPr == null) {
+            sectPr = document.getDocument().getBody().addNewSectPr();
+        }
+
+        // Настройка размера страницы А4
+        CTPageSz pageSize = sectPr.isSetPgSz() ? sectPr.getPgSz() : sectPr.addNewPgSz();
+        pageSize.setW(BigInteger.valueOf(11906));  // Ширина А4 в twips (21 см)
+        pageSize.setH(BigInteger.valueOf(16838));  // Высота А4 в twips (29.7 см)
+        pageSize.setOrient(STPageOrientation.PORTRAIT);  // Книжная ориентация
+
+        // Настройка полей
+        CTPageMar pageMar = sectPr.isSetPgMar() ? sectPr.getPgMar() : sectPr.addNewPgMar();
+        pageMar.setLeft(BigInteger.valueOf(1800));   // Левое поле ~3.17 см
+        pageMar.setRight(BigInteger.valueOf(1800));  // Правое поле ~3.17 см
+        pageMar.setTop(BigInteger.valueOf(1440));    // Верхнее поле ~2.54 см
+        pageMar.setBottom(BigInteger.valueOf(1440)); // Нижнее поле ~2.54 см
+        pageMar.setHeader(BigInteger.valueOf(720));  // Отступ для header ~1.27 см
+        pageMar.setFooter(BigInteger.valueOf(720));  // Отступ для footer ~1.27 см
     }
 
 
@@ -308,6 +352,7 @@ public class WordDocumentService {
         }
     }
 
+
 private void addEndpointsByTags(XWPFDocument document, OpenApiSpec apiSpec) {
     XWPFParagraph endpointsTitle = document.createParagraph();
     endpointsTitle.setStyle("Heading1");
@@ -324,21 +369,30 @@ private void addEndpointsByTags(XWPFDocument document, OpenApiSpec apiSpec) {
     Map<String, OpenApiSpec.Path> allPaths = getAllPaths(apiSpec);
 
     if (allPaths == null || allPaths.isEmpty()) {
+        logger.warn("No paths found in API specification");
         addEmptyEndpointsMessage(document);
         addSectionSpacing(document);
         return;
     }
 
+    logger.debug("Found {} paths in API specification", allPaths.size());
+
     // === ДИАГНОСТИКА ===
     DiagnosticInfo diagnostics = analyzeApiStructure(allPaths);
+    logger.debug("Diagnostics: {} paths, {} operations", diagnostics.totalPaths,
+            diagnostics.totalTaggedOperations + diagnostics.totalUntaggedOperations);
+
     addDiagnosticInfo(document, diagnostics);
 
     // === ГРУППИРОВКА И ОТОБРАЖЕНИЕ ===
     Map<String, List<EndpointOperation>> groupedOperations = groupOperationsByTags(allPaths, diagnostics);
+    logger.debug("Grouped operations into {} groups", groupedOperations.size());
 
     if (!groupedOperations.isEmpty() && hasValidOperations(groupedOperations)) {
+        logger.debug("Displaying grouped endpoints in tables");
         displayGroupedEndpointsInTables(document, groupedOperations, diagnostics);
     } else {
+        logger.debug("Displaying all endpoints fallback in tables");
         displayAllEndpointsFallbackInTables(document, allPaths, diagnostics);
     }
 
@@ -629,7 +683,6 @@ private void addEndpointsByTags(XWPFDocument document, OpenApiSpec apiSpec) {
 
         addSectionSpacing(document, 200);
     }
-    //////////////////////////////
 
     private void displayGroupedEndpointsInTables(XWPFDocument document,
                                                  Map<String, List<EndpointOperation>> groupedOperations,
@@ -720,62 +773,284 @@ private void addEndpointsByTags(XWPFDocument document, OpenApiSpec apiSpec) {
     }
 
     private void createEndpointsTable(XWPFDocument document, List<EndpointOperation> operations, String groupName) {
-        if (operations == null || operations.isEmpty()) return;
-
-        XWPFTable table = document.createTable(1, 6);
-        setupEndpointsTableProperties(table);
-
-        // Заголовок таблицы
-        XWPFTableRow headerRow = table.getRow(0);
-        headerRow.getCell(0).setText("№");
-        headerRow.getCell(1).setText("Метод");
-        headerRow.getCell(2).setText("Путь");
-        headerRow.getCell(3).setText("ID операции");
-        headerRow.getCell(4).setText("Описание");
-        headerRow.getCell(5).setText("Параметры");
-        styleEndpointsTableHeader(headerRow);
-
-        int rowNum = 1;
-        for (EndpointOperation endpointOp : operations) {
-            if (endpointOp.operation == null) continue;
-
-            XWPFTableRow row = table.createRow();
-
-            // №
-            row.getCell(0).setText(String.valueOf(rowNum));
-
-            // Метод
-            String method = endpointOp.method != null ? endpointOp.method : "UNKNOWN";
-            row.getCell(1).setText(method);
-
-            // Путь
-            row.getCell(2).setText(endpointOp.path != null ? endpointOp.path : "UNKNOWN");
-
-            // ID операции
-            String operationId = endpointOp.operation.getOperationId();
-            row.getCell(3).setText(operationId != null ? operationId : "-");
-
-            // Описание
-            String description = endpointOp.operation.getSummary() != null ?
-                    endpointOp.operation.getSummary() :
-                    (endpointOp.operation.getDescription() != null ?
-                            endpointOp.operation.getDescription() : "- отсуствует ");
-            row.getCell(4).setText(description);
-
-            // Параметры
-            String parametersInfo = buildParametersInfo(endpointOp.operation);
-            row.getCell(5).setText(parametersInfo);
-
-            // Стилизация ячеек
-            for (int i = 0; i < 6; i++) {
-                styleEndpointsTableCell(row.getCell(i), false);
-            }
-
-            rowNum++;
+        if (operations == null || operations.isEmpty()) {
+            logger.warn("No operations to display for group: {}", groupName);
+            return;
         }
 
-        // Добавляем разделитель после таблицы
-        addTableSeparator(document);
+        logger.debug("Creating endpoints table for group: {} with {} operations", groupName, operations.size());
+
+        try {
+            // Первая таблица - основные методы
+            XWPFTable mainTable = document.createTable(1, 5);
+            setupEndpointsTableProperties(mainTable);
+
+            // Заголовок таблицы методов
+            XWPFTableRow headerRow = mainTable.getRow(0);
+            headerRow.getCell(0).setText("№");
+            headerRow.getCell(1).setText("Метод");
+            headerRow.getCell(2).setText("Путь");
+            headerRow.getCell(3).setText("ID операции");
+            headerRow.getCell(4).setText("Описание");
+            styleEndpointsTableHeader(headerRow);
+
+            int rowNum = 1;
+            for (EndpointOperation endpointOp : operations) {
+                if (endpointOp.operation == null) {
+                    logger.debug("Skipping null operation for endpoint: {} {}", endpointOp.method, endpointOp.path);
+                    continue;
+                }
+
+                logger.debug("Adding endpoint {}: {} {}", rowNum, endpointOp.method, endpointOp.path);
+
+                XWPFTableRow row = mainTable.createRow();
+
+                // №
+                row.getCell(0).setText(String.valueOf(rowNum));
+
+                // Метод
+                String method = endpointOp.method != null ? endpointOp.method : "UNKNOWN";
+                row.getCell(1).setText(method);
+
+                // Путь
+                row.getCell(2).setText(endpointOp.path != null ? endpointOp.path : "UNKNOWN");
+
+                // ID операции
+                String operationId = endpointOp.operation.getOperationId();
+                row.getCell(3).setText(operationId != null ? operationId : "-");
+
+                // Описание
+                String description = endpointOp.operation.getSummary() != null ?
+                        endpointOp.operation.getSummary() :
+                        (endpointOp.operation.getDescription() != null ?
+                                endpointOp.operation.getDescription() : "- отсуствует ");
+
+                row.getCell(4).setText(truncateTextForTable(description, 3));
+
+                // Стилизация ячеек
+                for (int i = 0; i < 5; i++) {
+                    styleEndpointsTableCell(row.getCell(i), false);
+                }
+
+                // Создаем таблицу параметров для каждого endpoint
+                if (hasParameters(endpointOp.operation)) {
+                    logger.debug("Adding parameters table for endpoint {}: {} {}", rowNum, endpointOp.method, endpointOp.path);
+                    addTableSeparatorBeforeParameters(document, endpointOp, rowNum);
+                    addParametersTable(document, endpointOp, rowNum);
+                }
+
+                rowNum++;
+            }
+
+            logger.debug("Successfully created endpoints table with {} rows", rowNum - 1);
+
+            // Добавляем разделитель после таблиц
+            addTableSeparator(document);
+
+        } catch (Exception e) {
+            logger.error("Error creating endpoints table for group {}: {}", groupName, e.getMessage(), e);
+
+            // Fallback: добавить информацию об ошибке в документ
+            XWPFParagraph errorParagraph = document.createParagraph();
+            XWPFRun errorRun = errorParagraph.createRun();
+            errorRun.setText("Ошибка при создании таблицы: " + e.getMessage());
+            errorRun.setColor("FF0000");
+        }
+    }
+
+    private void addTableSeparatorBeforeParameters(XWPFDocument document, EndpointOperation endpointOp, int endpointNum) {
+        // Добавляем заголовок для таблицы параметров
+        XWPFParagraph paramsHeader = document.createParagraph();
+        paramsHeader.setSpacingBefore(80);  // Отступ перед заголовком
+        paramsHeader.setSpacingAfter(20);   // Отступ после заголовка
+
+        XWPFRun paramsHeaderRun = paramsHeader.createRun();
+        paramsHeaderRun.setText("Параметры для: " + endpointOp.method + " " + endpointOp.path);
+        paramsHeaderRun.setBold(true);
+        paramsHeaderRun.setFontSize(10);
+        paramsHeaderRun.setFontFamily("Times New Roman");
+        paramsHeaderRun.setColor("444444");
+
+        // Добавляем небольшую линию-разделитель
+        XWPFParagraph separator = document.createParagraph();
+        separator.setSpacingBefore(10);
+        separator.setSpacingAfter(20);
+
+        XWPFRun separatorRun = separator.createRun();
+        separatorRun.setText("─".repeat(50));
+        separatorRun.setFontSize(8);
+        separatorRun.setFontFamily("Courier New");
+        separatorRun.setColor("AAAAAA");
+    }
+
+    private boolean hasParameters(OpenApiSpec.Operation operation) {
+        return (operation.getParameters() != null && !operation.getParameters().isEmpty()) ||
+                (operation.getRequestBody() != null);
+    }
+
+    private void addParametersTable(XWPFDocument document, EndpointOperation endpointOp, int endpointNum) {
+        OpenApiSpec.Operation operation = endpointOp.operation;
+        if (operation == null) return;
+
+        // Создаем таблицу параметров
+        XWPFTable paramsTable = document.createTable(1, 4);
+        setupParametersTableProperties(paramsTable);
+
+        // Заголовок таблицы параметров
+        XWPFTableRow paramsHeaderRow = paramsTable.getRow(0);
+        paramsHeaderRow.getCell(0).setText("Параметр");
+        paramsHeaderRow.getCell(1).setText("Описание");
+        paramsHeaderRow.getCell(2).setText("Тип параметра");
+        paramsHeaderRow.getCell(3).setText("Тип данных");
+        styleParametersTableHeader(paramsHeaderRow);
+
+        int paramRowNum = 0;
+
+        // Добавляем параметры запроса
+        if (operation.getParameters() != null && !operation.getParameters().isEmpty()) {
+            for (OpenApiSpec.Parameter param : operation.getParameters()) {
+                if (param == null || param.getName() == null) continue;
+
+                XWPFTableRow paramRow = paramsTable.createRow();
+
+                // Параметр
+                String paramName = param.getName();
+                if (Boolean.TRUE.equals(param.getRequired())) {
+                    paramName += " *";
+                }
+                paramRow.getCell(0).setText(paramName);
+
+                // Описание
+                String description = param.getDescription() != null ? param.getDescription() : "";
+                paramRow.getCell(1).setText(truncateTextForTable(description, 2));
+
+                // Тип параметра
+                paramRow.getCell(2).setText(getLocationText(param.getIn()));
+
+                // Тип данных
+                String dataType = param.getSchema() != null ? getSchemaType(param.getSchema()) : "не определен";
+                paramRow.getCell(3).setText(dataType);
+
+                // Стилизация ячеек
+                for (int i = 0; i < 4; i++) {
+                    styleParametersTableCell(paramRow.getCell(i), false);
+                }
+
+                paramRowNum++;
+            }
+        }
+
+        // Добавляем тело запроса
+        if (operation.getRequestBody() != null) {
+            OpenApiSpec.RequestBody requestBody = operation.getRequestBody();
+
+            XWPFTableRow bodyRow = paramsTable.createRow();
+
+            // Параметр
+            String bodyName = "Тело запроса";
+            if (Boolean.TRUE.equals(requestBody.getRequired())) {
+                bodyName += " *";
+            }
+            bodyRow.getCell(0).setText(bodyName);
+
+            // Описание
+            String bodyDescription = requestBody.getDescription() != null ? requestBody.getDescription() : "";
+            bodyRow.getCell(1).setText(bodyDescription);
+
+            // Тип параметра
+            bodyRow.getCell(2).setText("body");
+
+            // Тип данных
+            String bodyDataType = "не определен";
+            if (requestBody.getContent() != null && !requestBody.getContent().isEmpty()) {
+                List<String> contentTypes = new ArrayList<>();
+                List<String> schemaTypes = new ArrayList<>();
+
+                for (Map.Entry<String, OpenApiSpec.MediaType> contentEntry : requestBody.getContent().entrySet()) {
+                    if (contentEntry.getKey() != null) {
+                        contentTypes.add(contentEntry.getKey());
+                    }
+                    if (contentEntry.getValue() != null && contentEntry.getValue().getSchema() != null) {
+                        schemaTypes.add(getSchemaType(contentEntry.getValue().getSchema()));
+                    }
+                }
+
+                if (!contentTypes.isEmpty()) {
+                    bodyDataType = "Типы: " + String.join(", ", contentTypes);
+                    if (!schemaTypes.isEmpty()) {
+                        bodyDataType += "\nСхема: " + String.join(", ", schemaTypes);
+                    }
+                }
+            }
+            bodyRow.getCell(3).setText(bodyDataType);
+
+            // Стилизация ячеек
+            for (int i = 0; i < 4; i++) {
+                styleParametersTableCell(bodyRow.getCell(i), false);
+            }
+        }
+
+        // Добавляем отступ после таблицы параметров
+        addParametersTableSpacing(document);
+    }
+
+    private void styleParametersTableHeader(XWPFTableRow row) {
+        for (XWPFTableCell cell : row.getTableCells()) {
+            cell.setColor("F0F0F0"); // Светло-серый фон для отличия от основной таблицы
+            for (XWPFParagraph paragraph : cell.getParagraphs()) {
+                paragraph.setAlignment(ParagraphAlignment.CENTER);
+                for (XWPFRun run : paragraph.getRuns()) {
+                    run.setBold(true);
+                    run.setFontFamily("Times New Roman");
+                    run.setFontSize(9);
+                    run.setColor("000000");
+                }
+            }
+        }
+    }
+
+
+    private void styleParametersTableCell(XWPFTableCell cell, boolean isHeader) {
+        for (XWPFParagraph paragraph : cell.getParagraphs()) {
+            paragraph.setAlignment(ParagraphAlignment.LEFT);
+            paragraph.setSpacingAfter(0);
+            paragraph.setSpacingBefore(0);
+
+            for (XWPFRun run : paragraph.getRuns()) {
+                run.setFontFamily("Times New Roman");
+                run.setFontSize(8);
+                if (isHeader) {
+                    run.setBold(true);
+                }
+                run.setColor("000000");
+            }
+        }
+    }
+
+    private String truncateTextForTable(String text, int maxLines) {
+        if (text == null || text.trim().isEmpty()) {
+            return "-";
+        }
+
+        String cleanedText = text.replaceAll("\\s+", " ").trim();
+
+        // Если текст короткий - возвращаем как есть
+        if (cleanedText.length() <= 100) {
+            return cleanedText;
+        }
+
+        // Обрезаем длинный текст и добавляем многоточие
+        if (cleanedText.length() > 200) {
+            cleanedText = cleanedText.substring(0, 197) + "...";
+        }
+
+        return cleanedText;
+    }
+
+
+    private void addParametersTableSpacing(XWPFDocument document) {
+        XWPFParagraph spacer = document.createParagraph();
+        spacer.setSpacingAfter(30);
     }
 
     private String buildParametersInfo(OpenApiSpec.Operation operation) {
@@ -837,20 +1112,72 @@ private void addEndpointsByTags(XWPFDocument document, OpenApiSpec apiSpec) {
         return paramsBuilder.length() > 0 ? paramsBuilder.toString() : "Нет параметров";
     }
 
-    private void setupEndpointsTableProperties(XWPFTable table) {
+    /*private void setupEndpointsTableProperties(XWPFTable table) {
         CTTblPr tblPr = table.getCTTbl().addNewTblPr();
         CTTblWidth tblW = tblPr.addNewTblW();
-        tblW.setW(BigInteger.valueOf(10000));
+        tblW.setW(BigInteger.valueOf(9000));  // Уменьшено для полей
         tblW.setType(STTblWidth.PCT);
 
-        CTTblGrid tblGrid = table.getCTTbl().addNewTblGrid();
-        tblGrid.addNewGridCol().setW(BigInteger.valueOf(500));   // №
-        tblGrid.addNewGridCol().setW(BigInteger.valueOf(800));   // Метод
-        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2500));  // Путь
-        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2000));  // ID операции
-        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2000));  // Описание
-        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2200));  // Параметры
+        // Включение переноса строк
+        CTTblLayoutType tblLayout = tblPr.addNewTblLayout();
+        tblLayout.setType(STTblLayoutType.AUTOFIT);
 
+        CTTblGrid tblGrid = table.getCTTbl().addNewTblGrid();
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(400));   // №
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(700));   // Метод
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2200));  // Путь
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(1800));  // ID операции
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(3900));  // Описание
+
+        table.setTableAlignment(TableRowAlign.LEFT);
+    }*/
+
+   private void setupEndpointsTableProperties(XWPFTable table) {
+        // Базовая настройка таблицы
+        table.setWidth("100%");
+        table.setTableAlignment(TableRowAlign.LEFT);
+    }
+/*private void setupEndpointsTableProperties(XWPFTable table) {
+    CTTblPr tblPr = table.getCTTbl().addNewTblPr();
+    CTTblWidth tblW = tblPr.addNewTblW();
+    tblW.setW(BigInteger.valueOf(9000));
+    tblW.setType(STTblWidth.PCT);
+
+    // Добавляем границу вокруг таблицы
+    CTTblBorders borders = tblPr.addNewTblBorders();
+    addTableBorder(borders.addNewTop());
+    addTableBorder(borders.addNewBottom());
+    addTableBorder(borders.addNewLeft());
+    addTableBorder(borders.addNewRight());
+    addTableBorder(borders.addNewInsideH());
+    addTableBorder(borders.addNewInsideV());
+
+    CTTblGrid tblGrid = table.getCTTbl().addNewTblGrid();
+    tblGrid.addNewGridCol().setW(BigInteger.valueOf(400));
+    tblGrid.addNewGridCol().setW(BigInteger.valueOf(700));
+    tblGrid.addNewGridCol().setW(BigInteger.valueOf(2200));
+    tblGrid.addNewGridCol().setW(BigInteger.valueOf(1800));
+    tblGrid.addNewGridCol().setW(BigInteger.valueOf(1800));
+
+    table.setTableAlignment(TableRowAlign.LEFT);
+}*/
+
+    private void addTableBorder(CTBorder border) {
+        border.setVal(STBorder.SINGLE);
+        border.setSz(BigInteger.valueOf(4));
+        border.setColor("000000");
+        border.setSpace(BigInteger.valueOf(0));
+    }
+
+    private void setupParametersTableProperties(XWPFTable table) {
+        // Базовая настройка таблицы
+        table.setWidth("100%");
+        table.setTableAlignment(TableRowAlign.LEFT);
+    }
+
+    private void setupSchemaTableProperties(XWPFTable table) {
+        // Базовая настройка таблицы
+        table.setWidth("100%");
         table.setTableAlignment(TableRowAlign.LEFT);
     }
 
@@ -874,9 +1201,10 @@ private void addEndpointsByTags(XWPFDocument document, OpenApiSpec apiSpec) {
             paragraph.setAlignment(ParagraphAlignment.LEFT);
             paragraph.setSpacingAfter(0);
             paragraph.setSpacingBefore(0);
+
             for (XWPFRun run : paragraph.getRuns()) {
                 run.setFontFamily("Times New Roman");
-                run.setFontSize(8);
+                run.setFontSize(9);
                 if (isHeader) {
                     run.setBold(true);
                 }
@@ -896,8 +1224,6 @@ private void addEndpointsByTags(XWPFDocument document, OpenApiSpec apiSpec) {
         separatorRun.setColor("CCCCCC");
     }
 
-
-    /// ///////////////////////////
     private void displayGroupedEndpoints(XWPFDocument document,
                                          Map<String, List<EndpointOperation>> groupedOperations,
                                          DiagnosticInfo diagnostics) {
@@ -1411,20 +1737,24 @@ private void addEndpointsByTags(XWPFDocument document, OpenApiSpec apiSpec) {
         }
     }
 
-    private void setupSchemaTableProperties(XWPFTable table) {
+/*    private void setupSchemaTableProperties(XWPFTable table) {
         CTTblPr tblPr = table.getCTTbl().addNewTblPr();
         CTTblWidth tblW = tblPr.addNewTblW();
-        tblW.setW(BigInteger.valueOf(9500));
+        tblW.setW(BigInteger.valueOf(9000));  // Уменьшено для полей
         tblW.setType(STTblWidth.PCT);
 
+        // Включение переноса строк
+        CTTblLayoutType tblLayout = tblPr.addNewTblLayout();
+        tblLayout.setType(STTblLayoutType.AUTOFIT);
+
         CTTblGrid tblGrid = table.getCTTbl().addNewTblGrid();
-        tblGrid.addNewGridCol().setW(BigInteger.valueOf(1500));
-        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2500));
-        tblGrid.addNewGridCol().setW(BigInteger.valueOf(1500));
-        tblGrid.addNewGridCol().setW(BigInteger.valueOf(4000));
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(1300));  // Поле
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(2300));  // Тип
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(1300));  // Обязательное
+        tblGrid.addNewGridCol().setW(BigInteger.valueOf(4100));  // Описание
 
         table.setTableAlignment(TableRowAlign.LEFT);
-    }
+    }*/
 
     private void styleSchemaTableHeader(XWPFTableRow row) {
         for (XWPFTableCell cell : row.getTableCells()) {
